@@ -25,11 +25,12 @@
 			position: sticky;
 			bottom: 0;
 			background: rgb(11,11,11);
-			height: 40px;
-			padding: 5px 10px;
+			min-height: 48px;
+			padding: 8px 10px;
 			flex-shrink: 0;
 			z-index: 10;
 			-webkit-overflow-scrolling: touch;
+			flex-wrap: wrap;
 		}
 
 		#bar input {
@@ -39,23 +40,31 @@
 			color: white;
 		}
 
-		#bar input[type="file"] {
-			width: auto;
-			max-width: 120px;
-			font-size: 12px;
+		/* Make file picker large and easy to tap on iOS */
+		#fileInput {
+			flex: 1 1 auto;
+			min-width: 140px;
+			max-width: 220px;
+			font-size: 16px; /* prevents iOS zoom on focus */
+			height: 36px;
+			padding: 6px;
+			-webkit-appearance: none;
+			appearance: none;
 		}
 
 		#bar input[type="range"] {
 			accent-color: rgb(80,80,80);
 			width: 100px;
 			flex-shrink: 0;
+			height: 36px;
 		}
 
 		#bar input[type="number"] {
 			color: white;
-			width: 45px;
+			width: 50px;
 			margin-left: 4px;
-			font-size: 14px;
+			font-size: 16px;
+			height: 36px;
 		}
 
 		#imageContainer {
@@ -114,7 +123,7 @@
 		</div>
 		<div id="imageContainer"></div>
 		<div id="bar">
-			<input type="file" id="fileInput" accept=".cbz,application/zip,application/x-cbz">
+			<input type="file" id="fileInput" accept="*/*">
 			<text>Zoom:</text>
 			<input type="range" id="zoomSlider" min="60" max="160" value="100">
 			<input type="number" id="zoomInput" min="60" max="160" value="100" step="1">
