@@ -2,15 +2,15 @@
 <html>
 	<head>
 		<base target="_top">
-		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-		<title>Html-only Cbz Reader (native + iOS 15)</title>
+		<title>Html-only Cbz Reader</title>
+		<!-- Include external JSZip library -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 		<style>
 			html, body {
 			overflow-x: hidden;
 			margin: 0;
 			padding: 0;
 			height: 100vh;
-			height: -webkit-fill-available;
 			color: white;
 			background-color: rgb(0,0,0);
 			font-family: Verdana, sans-serif;
@@ -21,55 +21,35 @@
 		#bar {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 10px;
 			position: sticky;
-			bottom: 0;
 			background: rgb(11,11,11);
-			min-height: 48px;
-			padding: 8px 10px;
-			flex-shrink: 0;
-			z-index: 10;
-			flex-wrap: wrap;
+			height: 35px;
+			padding: 5px 10px;
 		}
 
 		#bar input {
 			background: rgb(22,22,22);
 			padding: 5px;
 			border: none;
-			color: white;
-		}
-
-		#fileInput {
-			flex: 1 1 auto;
-			min-width: 140px;
-			max-width: 220px;
-			font-size: 16px;
-			height: 36px;
-			padding: 6px;
-			-webkit-appearance: none;
-			appearance: none;
+			width: 500px;
 		}
 
 		#bar input[type="range"] {
-			accent-color: rgb(80,80,80);
-			width: 100px;
-			flex-shrink: 0;
-			height: 36px;
+			accent-color: rgb(22,22,22);
+			width: 200px;
 		}
 
 		#bar input[type="number"] {
 			color: white;
 			width: 50px;
-			margin-left: 4px;
-			font-size: 16px;
-			height: 36px;
+			margin-left: 10px;
 		}
 
 		#imageContainer {
 			flex-grow: 1;
 			text-align: center;
 			overflow: auto;
-			-webkit-overflow-scrolling: touch;
 		}
 
 		img {
@@ -83,7 +63,6 @@
 		#pageCounter {
 			margin-left: auto;
 			white-space: nowrap;
-			font-size: 13px;
 		}
 
 		#messageContainer {
@@ -94,23 +73,17 @@
 			transform: translate(-50%, -50%);
 			text-align: center;
 			pointer-events: none;
-			z-index: 5;
 		}
 
 		.message {
-			font-size: 24px;
+			font-size: 32px;
 			text-shadow: 0 0 4px #000;
 			pointer-events: none;
 		}
 
 		#loadingMessage {
-			opacity: 0;
+			opacity: 0%;
 			transition: opacity 0.5s ease-in-out;
-		}
-
-		#bar text {
-			font-size: 13px;
-			white-space: nowrap;
 		}
 		</style>
 	</head>	
@@ -121,7 +94,7 @@
 		</div>
 		<div id="imageContainer"></div>
 		<div id="bar">
-			<input type="file" id="fileInput" accept="*/*">
+			<input type="file" id="fileInput" accept=".cbz">
 			<text>Zoom:</text>
 			<input type="range" id="zoomSlider" min="60" max="160" value="100">
 			<input type="number" id="zoomInput" min="60" max="160" value="100" step="1">
@@ -130,258 +103,38 @@
 	</body>
 	
 	<script>
-		/* ============================================================
-		   tiny-inflate (MIT) – pure JS raw DEFLATE for older Safari
-		   Port of Joergen Ibsen's tinf by Devon Govett / foliojs
-		   ============================================================ */
-		(function() {
-			var TINF_OK = 0;
-			var TINF_DATA_ERROR = -3;
-
-			function Tree() {
-				this.table = new Uint16Array(16);
-				this.trans = new Uint16Array(288);
-			}
-
-			function Data(source, dest) {
-				this.source = source;
-				this.sourceIndex = 0;
-				this.tag = 0;
-				this.bitcount = 0;
-				this.dest = dest;
-				this.destLen = 0;
-				this.ltree = new Tree();
-				this.dtree = new Tree();
-			}
-
-			var sltree = new Tree();
-			var sdtree = new Tree();
-			var length_bits = new Uint8Array(30);
-			var length_base = new Uint16Array(30);
-			var dist_bits = new Uint8Array(30);
-			var dist_base = new Uint16Array(30);
-			var clcidx = new Uint8Array([
-				16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
-			]);
-			var code_tree = new Tree();
-			var lengths = new Uint8Array(288 + 32);
-			var offs = new Uint16Array(16);
-
-			function tinf_build_bits_base(bits, base, delta, first) {
-				var i, sum;
-				for (i = 0; i < delta; ++i) bits[i] = 0;
-				for (i = 0; i < 30 - delta; ++i) bits[i + delta] = i / delta | 0;
-				for (sum = first, i = 0; i < 30; ++i) {
-					base[i] = sum;
-					sum += 1 << bits[i];
-				}
-			}
-
-			function tinf_build_fixed_trees(lt, dt) {
-				var i;
-				for (i = 0; i < 7; ++i) lt.table[i] = 0;
-				lt.table[7] = 24;
-				lt.table[8] = 152;
-				lt.table[9] = 112;
-				for (i = 0; i < 24; ++i) lt.trans[i] = 256 + i;
-				for (i = 0; i < 144; ++i) lt.trans[24 + i] = i;
-				for (i = 0; i < 8; ++i) lt.trans[24 + 144 + i] = 280 + i;
-				for (i = 0; i < 112; ++i) lt.trans[24 + 144 + 8 + i] = 144 + i;
-				for (i = 0; i < 5; ++i) dt.table[i] = 0;
-				dt.table[5] = 32;
-				for (i = 0; i < 32; ++i) dt.trans[i] = i;
-			}
-
-			function tinf_build_tree(t, lengths, off, num) {
-				var i, sum;
-				for (i = 0; i < 16; ++i) t.table[i] = 0;
-				for (i = 0; i < num; ++i) t.table[lengths[off + i]]++;
-				t.table[0] = 0;
-				for (sum = 0, i = 0; i < 16; ++i) {
-					offs[i] = sum;
-					sum += t.table[i];
-				}
-				for (i = 0; i < num; ++i) {
-					if (lengths[off + i]) t.trans[offs[lengths[off + i]]++] = i;
-				}
-			}
-
-			function tinf_getbit(d) {
-				if (!d.bitcount--) {
-					d.tag = d.source[d.sourceIndex++];
-					d.bitcount = 7;
-				}
-				var bit = d.tag & 1;
-				d.tag >>>= 1;
-				return bit;
-			}
-
-			function tinf_read_bits(d, num, base) {
-				if (!num) return base;
-				while (d.bitcount < 24) {
-					d.tag |= d.source[d.sourceIndex++] << d.bitcount;
-					d.bitcount += 8;
-				}
-				var val = d.tag & (0xffff >>> (16 - num));
-				d.tag >>>= num;
-				d.bitcount -= num;
-				return val + base;
-			}
-
-			function tinf_decode_symbol(d, t) {
-				while (d.bitcount < 24) {
-					d.tag |= d.source[d.sourceIndex++] << d.bitcount;
-					d.bitcount += 8;
-				}
-				var sum = 0, cur = 0, len = 0;
-				var tag = d.tag;
-				do {
-					cur = 2 * cur + (tag & 1);
-					tag >>>= 1;
-					++len;
-					sum += t.table[len];
-					cur -= t.table[len];
-				} while (cur >= 0);
-				d.tag = tag;
-				d.bitcount -= len;
-				return t.trans[sum + cur];
-			}
-
-			function tinf_decode_trees(d, lt, dt) {
-				var hlit, hdist, hclen, i, num, length;
-				hlit = tinf_read_bits(d, 5, 257);
-				hdist = tinf_read_bits(d, 5, 1);
-				hclen = tinf_read_bits(d, 4, 4);
-				for (i = 0; i < 19; ++i) lengths[i] = 0;
-				for (i = 0; i < hclen; ++i) {
-					lengths[clcidx[i]] = tinf_read_bits(d, 3, 0);
-				}
-				tinf_build_tree(code_tree, lengths, 0, 19);
-				for (num = 0; num < hlit + hdist;) {
-					var sym = tinf_decode_symbol(d, code_tree);
-					switch (sym) {
-						case 16:
-							var prev = lengths[num - 1];
-							for (length = tinf_read_bits(d, 2, 3); length; --length) lengths[num++] = prev;
-							break;
-						case 17:
-							for (length = tinf_read_bits(d, 3, 3); length; --length) lengths[num++] = 0;
-							break;
-						case 18:
-							for (length = tinf_read_bits(d, 7, 11); length; --length) lengths[num++] = 0;
-							break;
-						default:
-							lengths[num++] = sym;
-							break;
-					}
-				}
-				tinf_build_tree(lt, lengths, 0, hlit);
-				tinf_build_tree(dt, lengths, hlit, hdist);
-			}
-
-			function tinf_inflate_block_data(d, lt, dt) {
-				while (1) {
-					var sym = tinf_decode_symbol(d, lt);
-					if (sym === 256) return TINF_OK;
-					if (sym < 256) {
-						d.dest[d.destLen++] = sym;
-					} else {
-						var length, dist, offs, i;
-						sym -= 257;
-						length = tinf_read_bits(d, length_bits[sym], length_base[sym]);
-						dist = tinf_decode_symbol(d, dt);
-						offs = d.destLen - tinf_read_bits(d, dist_bits[dist], dist_base[dist]);
-						for (i = offs; i < offs + length; ++i) {
-							d.dest[d.destLen++] = d.dest[i];
-						}
-					}
-				}
-			}
-
-			function tinf_inflate_uncompressed_block(d) {
-				var length, invlength, i;
-				while (d.bitcount > 8) {
-					d.sourceIndex--;
-					d.bitcount -= 8;
-				}
-				length = d.source[d.sourceIndex + 1];
-				length = 256 * length + d.source[d.sourceIndex];
-				invlength = d.source[d.sourceIndex + 3];
-				invlength = 256 * invlength + d.source[d.sourceIndex + 2];
-				if (length !== (~invlength & 0x0000ffff)) return TINF_DATA_ERROR;
-				d.sourceIndex += 4;
-				for (i = length; i; --i) d.dest[d.destLen++] = d.source[d.sourceIndex++];
-				d.bitcount = 0;
-				return TINF_OK;
-			}
-
-			function tinf_uncompress(source, dest) {
-				var d = new Data(source, dest);
-				var bfinal, btype, res;
-				do {
-					bfinal = tinf_getbit(d);
-					btype = tinf_read_bits(d, 2, 0);
-					switch (btype) {
-						case 0:
-							res = tinf_inflate_uncompressed_block(d);
-							break;
-						case 1:
-							res = tinf_inflate_block_data(d, sltree, sdtree);
-							break;
-						case 2:
-							tinf_decode_trees(d, d.ltree, d.dtree);
-							res = tinf_inflate_block_data(d, d.ltree, d.dtree);
-							break;
-						default:
-							res = TINF_DATA_ERROR;
-					}
-					if (res !== TINF_OK) throw new Error('Data error');
-				} while (!bfinal);
-				if (d.destLen < d.dest.length) {
-					return d.dest.subarray(0, d.destLen);
-				}
-				return d.dest;
-			}
-
-			tinf_build_fixed_trees(sltree, sdtree);
-			tinf_build_bits_base(length_bits, length_base, 4, 3);
-			tinf_build_bits_base(dist_bits, dist_base, 2, 1);
-			length_bits[28] = 0;
-			length_base[28] = 258;
-
-			window.tinyInflate = tinf_uncompress;
-		})();
-
-		/* ============================================================
-		   Native ZIP parser + CBZ Reader (no external libraries)
-		   ============================================================ */
 		const imageContainer = document.getElementById('imageContainer');
 		const loadingMessage = document.getElementById("loadingMessage");
 		const pageCounter = document.getElementById('pageCounter');
 		const zoomSlider = document.getElementById("zoomSlider");
 		const zoomInput = document.getElementById("zoomInput");
-		let imageOffsets = [];
 
 		document.getElementById('fileInput').addEventListener('change', async function(event) {
-			loadingMessage.textContent = 'Loading... (0 / 0)';
+			loadingMessage.textContent = `Loading... (0 / 0)`;
 		
 			const file = event.target.files[0];
-			if (!file) return;
+			if (!file) return; // verify that at least one file exists
 			loadingMessage.style.opacity = "1";
 			
 			const totalPages = await loadBook(file);
 			if (totalPages == 0) {
-				console.log("'" + file.name + "' failed to load. Please check encoding...");
-				setTimeout(function() {
+				console.log(`'${file.name}' failed to load. Please check encoding...`);
+				
+				setTimeout(() => {
 					loadingMessage.style.opacity = "0";
 				}, 500);
 			} 
 			else {
-				console.log("'" + file.name + "' loaded with " + totalPages + " pages. Happy reading! =)");
-				setTimeout(function() {
+				console.log(`'${file.name}' loaded with ${totalPages} pages. Happy reading! =)`);
+
+				setTimeout(() => {
 					loadingMessage.style.opacity = "0";
 				}, 500);
+
+				// Set up zooming after images are loaded
 				setupZoom(totalPages);
+				
+				// Page counter logic
 				imageContainer.addEventListener('scroll', function() {
 					setPageCounter(totalPages);
 				});
@@ -390,149 +143,86 @@
 
 
 		async function loadBook(file) {
-			const d = new Uint8Array(await file.arrayBuffer()), len = d.length;
-			let e = len - 22;
-			while (e >= 0 && !(d[e]===0x50 && d[e+1]===0x4b && d[e+2]===0x05 && d[e+3]===0x06)) e--;
-			if (e < 0) {
-				alert("Could not load cbz file. It may be 7z encoded. Please use zip encoded cbz files only!");
+			const zip = new JSZip();
+			const zipData = await file.arrayBuffer();
+			var contents;
+			try {
+				contents = await zip.loadAsync(zipData);
+			} catch (err) {
+				alert("Could not load cbz file. It may be 7z encoded. Please use zip encoded cbz files only!\n\n" + err);
 				return 0;
 			}
-			const num = d[e+10] | (d[e+11]<<8);
-			let off = d[e+16] | (d[e+17]<<8) | (d[e+18]<<16) | (d[e+19]<<24), entries = [];
-			for (let i = 0; i < num; i++) {
-				const comp = d[off+10] | (d[off+11]<<8);
-				const csize = d[off+20] | (d[off+21]<<8) | (d[off+22]<<16) | (d[off+23]<<24);
-				const usize = d[off+24] | (d[off+25]<<8) | (d[off+26]<<16) | (d[off+27]<<24);
-				const nlen = d[off+28] | (d[off+29]<<8);
-				const elen = d[off+30] | (d[off+31]<<8);
-				const clen = d[off+32] | (d[off+33]<<8);
-				const loff = d[off+42] | (d[off+43]<<8) | (d[off+44]<<16) | (d[off+45]<<24);
-				let name = '';
-				for (let j = 0; j < nlen; j++) name += String.fromCharCode(d[off+46+j]);
-				off += 46 + nlen + elen + clen;
-				entries.push({ name: name, comp: comp, csize: csize, usize: usize, loff: loff });
-			}
-			const imageFiles = entries.filter(function(e) {
-				return e.name.match(/\.(jpg|jpeg|png|gif)$/i);
-			}).sort(function(a, b) {
-				return a.name < b.name ? -1 : 1;
-			});
+			
+			// ensure it is a valid type
+			const imageFiles = Object.keys(contents.files) 
+				.filter(filename => filename.match(/\.(jpg|jpeg|png|gif)$/i))
+				.sort();
+			
 			imageContainer.innerHTML = '';
 			const totalPages = imageFiles.length;
 			let pagesLoaded = 1;
-			const loadPromises = [];
-			for (let ei = 0; ei < imageFiles.length; ei++) {
-				const entry = imageFiles[ei];
-				const fnlen = d[entry.loff+26] | (d[entry.loff+27]<<8);
-				const exlen = d[entry.loff+28] | (d[entry.loff+29]<<8);
-				const dataOff = entry.loff + 30 + fnlen + exlen;
-				const compressed = d.subarray(dataOff, dataOff + entry.csize);
-				let imgData;
-				if (entry.comp === 0) {
-					imgData = new Blob([compressed]);
-				} else if (entry.comp === 8) {
-					try {
-						const dest = new Uint8Array(entry.usize);
-						const result = window.tinyInflate(compressed, dest);
-						imgData = new Blob([result]);
-					} catch (err) {
-						console.warn('Failed to inflate ' + entry.name, err);
-						continue;
-					}
-				} else {
-					continue;
-				}
+		   
+			for (const filename of imageFiles) {
+				const imgData = await contents.files[filename].async('blob');
 				const imgUrl = URL.createObjectURL(imgData);
+
 				const img = document.createElement('img');
 				img.src = imgUrl;
 				imageContainer.appendChild(img);
-				loadPromises.push(new Promise(function(resolve) {
-					img.onload = resolve;
-					img.onerror = resolve;
-				}));
-				loadingMessage.textContent = 'Loading... (' + pagesLoaded + ' / ' + totalPages + ')';
+				
+				loadingMessage.textContent = `Loading... (${pagesLoaded} / ${totalPages})`; // update loading message
 				pagesLoaded += 1;
 			}
-			await Promise.all(loadPromises);
-			computeImageOffsets();
+			
 			return totalPages;
 		}
 
 
-		function computeImageOffsets() {
-			const images = document.querySelectorAll("#imageContainer img");
-			imageOffsets = [];
-			let cumulative = 0;
-			for (let i = 0; i < images.length; i++) {
-				const img = images[i];
-				cumulative += (img.offsetHeight || 0) + 5;
-				imageOffsets.push(cumulative);
-			}
-		}
-
 		function setPageCounter(pageCount) {
+			const imageHeight = imageContainer.querySelector('img')?.height || 0;
+			const padding = 5; // 5px padding between images
+			const totalHeight = imageHeight + padding;
 			const scrollPosition = imageContainer.scrollTop;
-			let currentPage = 1;
-			for (let i = 0; i < imageOffsets.length; i++) {
-				if (scrollPosition < imageOffsets[i]) {
-					currentPage = i + 1;
-					break;
-				}
-			}
-			if (imageOffsets.length > 0 && scrollPosition >= imageOffsets[imageOffsets.length - 1]) {
-				currentPage = pageCount;
-			}
-			pageCounter.textContent = 'Page ' + currentPage + ' / ' + pageCount;
+			const currentPage = Math.floor(scrollPosition / totalHeight) + 1;
+			pageCounter.textContent = `Page ${currentPage} / ${pageCount}`;
 		}
 
 
+		// Function to update zoom
 		function updateZoom(value, pageCount) {
-			const scrollTop = imageContainer.scrollTop;
-			let targetPage = 0;
-			for (let i = 0; i < imageOffsets.length; i++) {
-				if (scrollTop < imageOffsets[i]) {
-					targetPage = i;
-					break;
-				}
-			}
-			if (imageOffsets.length > 0 && scrollTop >= imageOffsets[imageOffsets.length - 1]) {
-				targetPage = imageOffsets.length - 1;
-			}
-
-			const pageStart = targetPage > 0 ? imageOffsets[targetPage - 1] - 5 : 0;
-			const offsetInPage = scrollTop - pageStart;
-
 			const images = document.querySelectorAll("#imageContainer img");
-			for (let i = 0; i < images.length; i++) {
-				images[i].style.maxHeight = value + 'vh';
-			}
-			computeImageOffsets();
-
-			const newPageStart = targetPage > 0 ? imageOffsets[targetPage - 1] - 5 : 0;
-			const imageHeight = imageOffsets[targetPage] - (targetPage > 0 ? imageOffsets[targetPage - 1] - 5 : 0) - 5;
-			const fraction = imageHeight > 0 ? Math.min(offsetInPage, imageHeight) : 0;
-			imageContainer.scrollTop = Math.min(newPageStart + fraction, imageContainer.scrollHeight - imageContainer.clientHeight);
-
+			
+			images.forEach(img => {
+				// Update the maxHeight to reflect the zoom level
+				img.style.maxHeight = `${value}vh`;
+			});
+			
 			setPageCounter(pageCount);
 		}
 
 
 		function setupZoom(pageCount) {
-			let zoomLevel = zoomSlider.value || 100;
+			const images = document.querySelectorAll("#imageContainer img");
+			let zoomLevel = zoomSlider.value || 100; // Default zoom level at 100%
+
+			// Initialize with the default zoom level
 			updateZoom(zoomLevel, pageCount);
 
+			// Slider event listener
 			zoomSlider.addEventListener("input", function () {
-				const value = parseInt(zoomSlider.value, 10);
-				zoomInput.value = value;
+				const value = parseInt(zoomSlider.value);
+				zoomInput.value = value; // Sync the input box with the slider
 				updateZoom(value, pageCount);
 			});
 
+			// Input event listener
 			zoomInput.addEventListener("input", function () {
-				const value = parseInt(zoomInput.value, 10);
+				const value = parseInt(zoomInput.value);
 				if (value >= 60 && value <= 160) {
-					zoomSlider.value = value;
+					zoomSlider.value = value; // Sync the slider with the input box
 					updateZoom(value, pageCount);
 				} else {
+					// Reset to last valid zoom level if input is out of bounds
 					zoomInput.value = zoomLevel;
 				}
 			});
